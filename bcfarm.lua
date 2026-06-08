@@ -1,19 +1,17 @@
--- Sparring + AutoKill + Bed + Rejoin (исправленный, с ожиданием персонажа)
+-- Sparring + AutoKill + Bed + Rejoin (без проверок на загрузку, только WaitForChild)
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 local TeleportService = game:GetService("TeleportService")
 local player = Players.LocalPlayer
 
--- Сохраняем код скрипта для авто-перезапуска
+-- Авто-перезапуск (оставляем как есть)
 if not _G.SparringScriptCode then
     _G.SparringScriptCode = debug and debug.getinfo(1).source:sub(2) or ""
     if _G.SparringScriptCode == "" then
         _G.SparringScriptCode = "loadstring(game:HttpGet('https://raw.githubusercontent.com/jmiyazaki32-blip/bak/refs/heads/main/bcfarm.lua'))()"
     end
 end
-
--- Настройка авто-перезапуска
 if not _G.SparringQueued then
     _G.SparringQueued = true
     local queue = queue_on_teleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport)
@@ -33,12 +31,12 @@ local rejoinDelay = 5
 
 local serverEvent = ReplicatedStorage:FindFirstChild("Events") and ReplicatedStorage.Events:FindFirstChild("Server")
 
--- === БЕЗОПАСНОЕ ОЖИДАНИЕ ПЕРСОНАЖА ===
-local function waitForCharacter()
+-- === БЕЗОПАСНОЕ ПОЛУЧЕНИЕ HRP (ждём бесконечно) ===
+local function getHRP()
     if not player.Character then
         player.CharacterAdded:Wait()
     end
-    return player.Character:WaitForChild("HumanoidRootPart", 10)
+    return player.Character:WaitForChild("HumanoidRootPart")
 end
 
 -- === КИЛЛ ЛУП ===
@@ -57,7 +55,7 @@ local function killLoop()
     end
 end
 
--- === ПОЛУЧЕНИЕ УСТАЛОСТИ ===
+-- === УСТАЛОСТЬ ===
 local function getFatigue()
     local hud = player:FindFirstChild("PlayerGui") and player.PlayerGui:FindFirstChild("HUD")
     if hud then
@@ -74,14 +72,14 @@ local function getFatigue()
     return 0
 end
 
--- === ТЕЛЕПОРТ С ОЖИДАНИЕМ ПЕРСОНАЖА ===
+-- === ТЕЛЕПОРТ ===
 local function safeTeleport(pos)
-    local hrp = waitForCharacter()
+    local hrp = getHRP()
     hrp.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0))
     task.wait(0.3)
 end
 
--- === ПОИСК ПРОМПТА КРОВАТИ ===
+-- === ПОИСК КРОВАТИ ===
 local cachedBedPrompt, cachedBedPart = nil, nil
 local function findBedPrompt()
     if cachedBedPrompt and cachedBedPrompt.Parent and cachedBedPrompt.Parent.Parent then
@@ -100,14 +98,14 @@ local function findBedPrompt()
     return nil, nil
 end
 
--- === ОТДЫХ В КРОВАТИ ===
+-- === ОТДЫХ ===
 local function restInBed()
     safeTeleport(bedPos)
     task.wait(3)
     for attempt = 1, 5 do
         local prompt, part = findBedPrompt()
         if prompt and part then
-            local hrp = waitForCharacter()
+            local hrp = getHRP()
             hrp.CFrame = CFrame.new(part.Position + Vector3.new(0, 2, 0))
             task.wait(0.3)
             if fireproximityprompt then
@@ -135,11 +133,10 @@ local function rejoinServer()
     pcall(function()
         TeleportService:Teleport(game.PlaceId, player)
     end)
-    -- Останавливаем скрипт, queue_on_teleport перезапустит его
     error("Режоин выполнен")
 end
 
--- === ЗАПУСК СПАРРИНГА ===
+-- === СПАРРИНГ ===
 local function startSparring()
     if not serverEvent then return false end
     local npc = Workspace:FindFirstChild("Alive") and Workspace.Alive:FindFirstChild("NPCs") and Workspace.Alive.NPCs:FindFirstChild("Wrestler")
@@ -163,8 +160,8 @@ end
 
 -- === ГЛАВНЫЙ ЦИКЛ ===
 local function main()
-    -- Ждём загрузки персонажа
-    waitForCharacter()
+    -- Ждём появления персонажа (без лишних проверок)
+    getHRP()
 
     killLoopActive = true
     task.spawn(killLoop)
@@ -197,7 +194,4 @@ local function main()
 end
 
 -- Запуск
-local ok, err = pcall(main)
-if not ok then
-    print("Скрипт остановлен:", err)
-end
+pcall(main)
