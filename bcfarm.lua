@@ -1,11 +1,11 @@
--- Sparring + AutoKill + Bed + Rejoin (исправленный, с обновлением событий и повторными попытками)
+-- Sparring + AutoKill + Bed + Rejoin (исправленный: после реджоина запускает спарринг, реджоин только если долго нет прогресса)
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 local TeleportService = game:GetService("TeleportService")
 local player = Players.LocalPlayer
 
--- Авто-перезапуск после режоина
+-- Авто-перезапуск после реджоина
 if not _G.SparringScriptCode then
     _G.SparringScriptCode = debug and debug.getinfo(1).source:sub(2) or ""
     if _G.SparringScriptCode == "" then
@@ -26,12 +26,19 @@ getgenv().Creator = 'https://discord.gg/B3HqPPzFYr - HalloweenGaster'
 local killLoopActive = false
 local bedPos = Vector3.new(-231, 266, -565)
 local REST_THRESHOLD = 80
-local lastRejoinTime = 0
-local rejoinDelay = 5
+local lastFatigueTime = 0      -- время последнего изменения усталости
+local rejoinCooldown = 30      -- секунд без роста усталости перед реджоином
+local rejoinTimer = nil
 
--- Функция получения актуального serverEvent
+local serverEvent = nil
+
+-- Функция получения актуального serverEvent (ждёт появления)
 local function getServerEvent()
-    return ReplicatedStorage:FindFirstChild("Events") and ReplicatedStorage.Events:FindFirstChild("Server")
+    while not serverEvent do
+        serverEvent = ReplicatedStorage:FindFirstChild("Events") and ReplicatedStorage.Events:FindFirstChild("Server")
+        if not serverEvent then task.wait(1) end
+    end
+    return serverEvent
 end
 
 -- Безопасное получение HumanoidRootPart (ждёт вечно)
@@ -75,14 +82,14 @@ local function getFatigue()
     return 0
 end
 
--- Телепорт (безопасный)
+-- Телепорт
 local function safeTeleport(pos)
     local hrp = getHRP()
     hrp.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0))
     task.wait(0.3)
 end
 
--- Поиск промпта кровати (кэшируется)
+-- Поиск промпта кровати
 local cachedBedPrompt, cachedBedPart = nil, nil
 local function findBedPrompt()
     if cachedBedPrompt and cachedBedPrompt.Parent and cachedBedPrompt.Parent.Parent then
@@ -139,15 +146,11 @@ local function rejoinServer()
     error("Режоин выполнен")
 end
 
--- Запуск спарринга с повторными попытками найти NPC
+-- Запуск спарринга с повторными попытками
 local function startSparring()
-    local serverEvent = getServerEvent()
-    if not serverEvent then
-        print("ServerEvent не найден, ждём...")
-        return false
-    end
+    getServerEvent()  -- ждём serverEvent
     local npc = nil
-    for i = 1, 60 do
+    for i = 1, 120 do
         npc = Workspace:FindFirstChild("Alive") and Workspace.Alive:FindFirstChild("NPCs") and Workspace.Alive.NPCs:FindFirstChild("Wrestler")
         if npc then break end
         task.wait(1)
@@ -165,14 +168,16 @@ end
 
 -- Главный цикл
 local function main()
-    -- Небольшая пауза для полной загрузки после режоина
-    task.wait(2)
-    getHRP()  -- ждём персонажа
+    -- Даём игре время на загрузку после реджоина
+    task.wait(3)
+    getHRP()
+    getServerEvent()
 
     killLoopActive = true
     task.spawn(killLoop)
     startSparring()
-    lastRejoinTime = tick()
+    lastFatigueTime = tick()
+    local lastFatigueValue = getFatigue()
 
     while true do
         local fatigue = getFatigue()
@@ -188,10 +193,17 @@ local function main()
             killLoopActive = true
             task.spawn(killLoop)
             startSparring()
-            lastRejoinTime = tick()
+            lastFatigueTime = tick()
+            lastFatigueValue = 0
         else
-            if tick() - lastRejoinTime >= rejoinDelay then
-                print("Усталость " .. fatigue .. "% (<80) -> режоин")
+            -- Проверяем, растёт ли усталость (нормальный процесс тренировки)
+            if fatigue > lastFatigueValue then
+                lastFatigueTime = tick()
+            end
+            lastFatigueValue = fatigue
+            -- Если усталость не растёт дольше rejoinCooldown секунд и при этом ниже порога, реджоинимся
+            if tick() - lastFatigueTime > rejoinCooldown and fatigue < REST_THRESHOLD then
+                print("Усталость не растёт (" .. fatigue .. "%) более " .. rejoinCooldown .. " сек, режоин")
                 rejoinServer()
             end
         end
