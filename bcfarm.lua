@@ -1,11 +1,11 @@
--- Sparring + AutoKill + Bed + Rejoin (без проверок на загрузку, только WaitForChild)
+-- Sparring + AutoKill + Bed + Rejoin (исправленный, с обновлением событий и повторными попытками)
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 local TeleportService = game:GetService("TeleportService")
 local player = Players.LocalPlayer
 
--- Авто-перезапуск (оставляем как есть)
+-- Авто-перезапуск после режоина
 if not _G.SparringScriptCode then
     _G.SparringScriptCode = debug and debug.getinfo(1).source:sub(2) or ""
     if _G.SparringScriptCode == "" then
@@ -29,9 +29,12 @@ local REST_THRESHOLD = 80
 local lastRejoinTime = 0
 local rejoinDelay = 5
 
-local serverEvent = ReplicatedStorage:FindFirstChild("Events") and ReplicatedStorage.Events:FindFirstChild("Server")
+-- Функция получения актуального serverEvent
+local function getServerEvent()
+    return ReplicatedStorage:FindFirstChild("Events") and ReplicatedStorage.Events:FindFirstChild("Server")
+end
 
--- === БЕЗОПАСНОЕ ПОЛУЧЕНИЕ HRP (ждём бесконечно) ===
+-- Безопасное получение HumanoidRootPart (ждёт вечно)
 local function getHRP()
     if not player.Character then
         player.CharacterAdded:Wait()
@@ -39,7 +42,7 @@ local function getHRP()
     return player.Character:WaitForChild("HumanoidRootPart")
 end
 
--- === КИЛЛ ЛУП ===
+-- Бесконечный килл всех NPC (кроме игрока)
 local function killLoop()
     while killLoopActive and getgenv().G do
         pcall(function()
@@ -55,7 +58,7 @@ local function killLoop()
     end
 end
 
--- === УСТАЛОСТЬ ===
+-- Получение усталости из HUD
 local function getFatigue()
     local hud = player:FindFirstChild("PlayerGui") and player.PlayerGui:FindFirstChild("HUD")
     if hud then
@@ -72,14 +75,14 @@ local function getFatigue()
     return 0
 end
 
--- === ТЕЛЕПОРТ ===
+-- Телепорт (безопасный)
 local function safeTeleport(pos)
     local hrp = getHRP()
     hrp.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0))
     task.wait(0.3)
 end
 
--- === ПОИСК КРОВАТИ ===
+-- Поиск промпта кровати (кэшируется)
 local cachedBedPrompt, cachedBedPart = nil, nil
 local function findBedPrompt()
     if cachedBedPrompt and cachedBedPrompt.Parent and cachedBedPrompt.Parent.Parent then
@@ -98,7 +101,7 @@ local function findBedPrompt()
     return nil, nil
 end
 
--- === ОТДЫХ ===
+-- Отдых в кровати до 0% усталости
 local function restInBed()
     safeTeleport(bedPos)
     task.wait(3)
@@ -122,7 +125,7 @@ local function restInBed()
     return false
 end
 
--- === РЕЖОИН ===
+-- Режоин (перезаход)
 local function rejoinServer()
     killLoopActive = false
     task.wait(0.5)
@@ -136,21 +139,23 @@ local function rejoinServer()
     error("Режоин выполнен")
 end
 
--- === СПАРРИНГ ===
+-- Запуск спарринга с повторными попытками найти NPC
 local function startSparring()
-    if not serverEvent then return false end
-    local npc = Workspace:FindFirstChild("Alive") and Workspace.Alive:FindFirstChild("NPCs") and Workspace.Alive.NPCs:FindFirstChild("Wrestler")
+    local serverEvent = getServerEvent()
+    if not serverEvent then
+        print("ServerEvent не найден, ждём...")
+        return false
+    end
+    local npc = nil
+    for i = 1, 60 do
+        npc = Workspace:FindFirstChild("Alive") and Workspace.Alive:FindFirstChild("NPCs") and Workspace.Alive.NPCs:FindFirstChild("Wrestler")
+        if npc then break end
+        task.wait(1)
+    end
     if not npc then
-        for i = 1, 30 do
-            task.wait(1)
-            npc = Workspace:FindFirstChild("Alive") and Workspace.Alive:FindFirstChild("NPCs") and Workspace.Alive.NPCs:FindFirstChild("Wrestler")
-            if npc then break end
-        end
-        if not npc then
-            print("NPC Wrestler не найден, режоин")
-            rejoinServer()
-            return false
-        end
+        print("NPC Wrestler не найден, режоин")
+        rejoinServer()
+        return false
     end
     local args = { "Misc", "SparTrainer", "Start", "Stage8", npc }
     serverEvent:FireServer(unpack(args))
@@ -158,10 +163,11 @@ local function startSparring()
     return true
 end
 
--- === ГЛАВНЫЙ ЦИКЛ ===
+-- Главный цикл
 local function main()
-    -- Ждём появления персонажа (без лишних проверок)
-    getHRP()
+    -- Небольшая пауза для полной загрузки после режоина
+    task.wait(2)
+    getHRP()  -- ждём персонажа
 
     killLoopActive = true
     task.spawn(killLoop)
