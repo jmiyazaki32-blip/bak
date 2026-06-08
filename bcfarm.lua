@@ -10,7 +10,7 @@ if not _G.SparringScriptCode then
     _G.SparringScriptCode = debug and debug.getinfo(1).source:sub(2) or ""
     if _G.SparringScriptCode == "" then
         -- Если не удалось получить код, используем заглушку (но скрипт должен быть загружен через инжектор)
-        _G.SparringScriptCode = "loadstring(game:HttpGet('https://raw.githubusercontent.com/jmiyazaki32-blip/bak/main/bcfarm.lua'))()"
+        _G.SparringScriptCode = "loadstring(game:HttpGet('https://raw.githubusercontent.com/jmiyazaki32-blip/bak/refs/heads/main/bcfarm.lua'))()"
     end
 end
 
